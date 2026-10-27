@@ -16,7 +16,10 @@
 # with fas-rs. If not, see <https://www.gnu.org/licenses/>.
 
 [workspace]
-members = ["xtask"]
+members = ["xtask", "vendor/frame-analyzer"]
+
+[patch.crates-io]
+frame-analyzer = { path = "vendor/frame-analyzer" }
 
 [package]
 name = "fas-rs"

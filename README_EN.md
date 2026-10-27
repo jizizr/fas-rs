@@ -151,6 +151,8 @@ core_temp_thresh = 95000
 
 ## **Compilation**
 
+See the [build guide](docs/build.md) for pinned tools and setup. Node.js 22, pnpm 10.11.0, and prebuilt bpf-linker 0.12.0 are also required; set `LIBCLANG_PATH` to the NDK library directory.
+
 ```bash
 # Ubuntu (NDK is required)
 apt install gcc-multilib git-lfs

@@ -55,6 +55,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.profile }}-ndk-${{ env.NDK_VERSION }}
+      - name: Install BPF linker
+        run: |
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/bpf-linker.tar.zst" https://github.com/aya-rs/bpf-linker/releases/download/v0.12.0/bpf-linker-x86_64-unknown-linux-musl.tar.zst
+          echo "6789717c8cb6a2a5d920f3b6bfac2bd7efc00f6228ecd149108a99699a75c679  $RUNNER_TEMP/bpf-linker.tar.zst" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/bpf-linker"
+          tar --zstd -xf "$RUNNER_TEMP/bpf-linker.tar.zst" -C "$RUNNER_TEMP/bpf-linker"
+          echo "$RUNNER_TEMP/bpf-linker" >> "$GITHUB_PATH"
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --version 4.1.2 --locked
       - uses: pnpm/action-setup@v4
@@ -69,8 +76,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-multilib
+      - name: Test page size handling
+        if: matrix.profile == 'debug'
+        run: cargo test --locked -p frame-analyzer --lib
       - name: Build
         run: cargo xtask build ${{ matrix.args }} -v
+      - name: Check 16 KiB ELF alignment
+        run: python3 .github/scripts/check-elf-alignment.py "target/aarch64-linux-android/${{ matrix.profile }}/fas-rs"
       - name: Prepare artifacts
         run: |
           mkdir -p "output/artifact/${{ matrix.profile }}"
