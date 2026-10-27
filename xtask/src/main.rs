@@ -23,7 +23,7 @@ use std::{
     process::{self, Command},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use fs_extra::{dir, file};
 use zip::{CompressionMethod, write::FileOptions};
@@ -123,6 +123,7 @@ fn build(release: bool, verbose: bool) -> Result<()> {
     let mut cargo = cargo_ndk();
     cargo.args([
         "build",
+        "--locked",
         "--target",
         "aarch64-linux-android",
         "-Z",
@@ -139,7 +140,7 @@ fn build(release: bool, verbose: bool) -> Result<()> {
         cargo.arg("--verbose");
     }
 
-    cargo.spawn()?.wait()?;
+    run(&mut cargo)?;
 
     let module_dir = module_dir();
     dir::copy(
@@ -181,6 +182,7 @@ fn check(release: bool, verbose: bool) -> Result<()> {
     let mut cargo = cargo_ndk();
     cargo.args([
         "check",
+        "--locked",
         "--target",
         "aarch64-linux-android",
         "-Z",
@@ -198,7 +200,7 @@ fn check(release: bool, verbose: bool) -> Result<()> {
         cargo.arg("--verbose");
     }
 
-    cargo.spawn()?.wait()?;
+    run(&mut cargo)?;
 
     Ok(())
 }
@@ -207,7 +209,7 @@ fn clean() -> Result<()> {
     let temp_dir = temp_dir(false);
     let _ = fs::remove_dir_all(&temp_dir);
 
-    Command::new("cargo").arg("clean").spawn()?.wait()?;
+    run(Command::new("cargo").arg("clean"))?;
 
     Ok(())
 }
@@ -218,7 +220,7 @@ fn format(verbose: bool) -> Result<()> {
     if verbose {
         command.arg("--verbose");
     }
-    command.spawn()?.wait()?;
+    run(&mut command)?;
 
     Ok(())
 }
@@ -234,22 +236,17 @@ fn lint(fix: bool) -> Result<()> {
         command
     };
 
-    command_builder(fix).spawn()?.wait()?;
-    command_builder(fix).arg("--release").spawn()?.wait()?;
+    run(&mut command_builder(fix))?;
+    run(command_builder(fix).arg("--release"))?;
 
     Ok(())
 }
 
 fn update() -> Result<()> {
-    Command::new("cargo")
-        .args(["update", "--recursive"])
-        .spawn()?
-        .wait()?;
-    Command::new("cargo")
+    run(Command::new("cargo").args(["update", "--recursive"]))?;
+    run(Command::new("cargo")
         .current_dir("xtask")
-        .args(["update", "--recursive"])
-        .spawn()?
-        .wait()?;
+        .args(["update", "--recursive"]))?;
 
     Ok(())
 }
@@ -275,6 +272,13 @@ fn cargo_ndk() -> Command {
     let mut command = Command::new("cargo");
     command
         .args(["+nightly", "ndk", "--platform", "31", "-t", "arm64-v8a"])
+        // cargo-ndk 4.1.2 sets the underscored bindgen variable with only sysroot
+        // arguments. Bindgen prefers this spelling and discovers NDK includes
+        // through CLANG_PATH. NDK r30 requires an explicit API in the target.
+        .env(
+            "BINDGEN_EXTRA_CLANG_ARGS_aarch64-linux-android",
+            "--target=aarch64-linux-android31",
+        )
         .env("RUSTFLAGS", "-C default-linker-libraries");
     command
 }
@@ -284,14 +288,24 @@ fn webroot_dir() -> PathBuf {
 }
 
 fn build_webui() -> Result<()> {
-    let npm = || {
-        let mut command = Command::new("npm");
+    let pnpm = || {
+        let mut command = Command::new("pnpm");
         command.current_dir("webui");
         command
     };
 
-    npm().arg("install").spawn()?.wait()?;
-    npm().args(["run", "build"]).spawn()?.wait()?;
+    run(pnpm().args(["install", "--frozen-lockfile"]))?;
+    run(pnpm().args(["run", "build"]))?;
 
+    Ok(())
+}
+
+fn run(command: &mut Command) -> Result<()> {
+    let status = command
+        .status()
+        .with_context(|| format!("Failed to start {command:?}"))?;
+    if !status.success() {
+        bail!("Command {command:?} failed with {status}");
+    }
     Ok(())
 }
