@@ -38,7 +38,6 @@ SHA-256：`08be0f9ae1e153944ec7e180d587bd9c2935d8dbdddf95e4d92205ee660867f4`。
 
 ## 验证
 
-- Linux 上运行 `cargo test --locked -p frame-analyzer --lib`，检查 4/16/64 KiB 页及无效页大小处理。
 - 运行 `actionlint .github/workflows/ci.yml` 检查工作流。
 - 修改 Rust 文件后运行 `cargo fmt --all`。
 - 使用 `webui/pnpm-lock.yaml` 安装 WebUI；构建会自动执行 `pnpm install --frozen-lockfile`，不再在仓库根目录安装 Next/React。

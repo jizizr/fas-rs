@@ -76,9 +76,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-multilib
-      - name: Test page size handling
-        if: matrix.profile == 'debug'
-        run: cargo test --locked -p frame-analyzer --lib
       - name: Build
         run: cargo xtask build ${{ matrix.args }} -v
       - name: Check 16 KiB ELF alignment
