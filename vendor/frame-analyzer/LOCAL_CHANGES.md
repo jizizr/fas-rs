@@ -5,7 +5,8 @@ Local changes:
 
 - build.rs uses a preinstalled bpf-linker instead of compiling an unpinned latest
   release during every build. It explicitly builds frame-analyzer-ebpf 0.2.0 with
-  nightly and its lockfile, and checks subprocess exit codes.
+  nightly and its lockfile, and checks subprocess exit codes. The BPF register
+  layout is explicitly aarch64, including when the build host is Linux x86_64.
 - src/ebpf.rs overrides the BPF ring buffer capacity with the kernel's page size
   (at least 4 KiB). This supports both 4 KiB and 16 KiB devices, and 64 KiB pages.
 - src/uprobe.rs keeps the existing Android <=16 symbols and adds the Android 17

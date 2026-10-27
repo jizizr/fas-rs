@@ -47,6 +47,8 @@ fn main() -> Result<()> {
     ]);
     command.arg("--target-dir").arg(&target_dir);
     command.arg("--root").arg(&target_dir);
+    // The probe reads Android ARM64 registers, regardless of the build host.
+    command.env("CARGO_CFG_BPF_TARGET_ARCH", "aarch64");
     // Android compiler/linker flags must not leak into the BPF compilation.
     command
         .env_remove("RUSTFLAGS")
