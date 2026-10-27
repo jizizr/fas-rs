@@ -21,109 +21,86 @@ on:
     branches: ["master"]
   pull_request:
     branches: ["master"]
+  workflow_dispatch:
+permissions:
+  contents: read
 env:
   CARGO_TERM_COLOR: always
+  NDK_VERSION: "30.0.16248370"
 jobs:
-  release-build:
-    runs-on: ubuntu-latest
+  build:
+    name: ${{ matrix.profile }}-build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: release
+            args: "-r"
+          - profile: debug
+            args: ""
     steps:
       - uses: actions/checkout@v4
-      - name: Setup ndk
+      - name: Setup NDK
         run: |
-          ndk_url=$(wget -qO- https://github.com/android/ndk/releases/latest | grep -e 'https://dl.google.com/android/repository/android-ndk-.*-linux.zip' | sed -n 's/.*<a href="\([^"]*\)".*/\1/p')
-          wget -O ndk.zip $ndk_url -nv
-          mkdir -p ~/ndk_temp
-          unzip ndk.zip -d ~/ndk_temp 2>&1 > /dev/null
-          mv ~/ndk_temp/*/* ~/ndk_temp
-      - name: Setup rust toolchains
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION"
+          ndk="$ANDROID_HOME/ndk/$NDK_VERSION"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ndk" >> "$GITHUB_ENV"
+          echo "LIBCLANG_PATH=$ndk/toolchains/llvm/prebuilt/linux-x86_64/lib" >> "$GITHUB_ENV"
+      - name: Setup Rust toolchain
         run: |
+          rustup toolchain install nightly --profile minimal --component rust-src --target aarch64-linux-android
           rustup default nightly
-          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
-          rustup component add rust-src
-          rustup update
       - uses: Swatinem/rust-cache@v2
-      - name: Install cargo ndk
-        run: cargo install cargo-ndk
-      - name: Setup WebUI Deps
+        with:
+          key: ${{ matrix.profile }}-ndk-${{ env.NDK_VERSION }}
+      - name: Install BPF linker
         run: |
-          npm install next@latest react@latest react-dom@latest
-          cd webui
-          npm install
-      - name: Other deps
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/bpf-linker.tar.zst" https://github.com/aya-rs/bpf-linker/releases/download/v0.12.0/bpf-linker-x86_64-unknown-linux-musl.tar.zst
+          echo "6789717c8cb6a2a5d920f3b6bfac2bd7efc00f6228ecd149108a99699a75c679  $RUNNER_TEMP/bpf-linker.tar.zst" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/bpf-linker"
+          tar --zstd -xf "$RUNNER_TEMP/bpf-linker.tar.zst" -C "$RUNNER_TEMP/bpf-linker"
+          echo "$RUNNER_TEMP/bpf-linker" >> "$GITHUB_PATH"
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: webui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+      - name: Other dependencies
         run: |
-          sudo apt update
-          sudo apt install gcc-multilib
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
       - name: Build
-        run: |
-          export ANDROID_NDK_HOME=$(realpath ~/ndk_temp)
-          export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
-          cargo xtask build -r -v
-      - name: Cleanup
-        run: rm -rf ~/ndk_temp
+        run: cargo xtask build ${{ matrix.args }} -v
+      - name: Check 16 KiB ELF alignment
+        run: python3 .github/scripts/check-elf-alignment.py "target/aarch64-linux-android/${{ matrix.profile }}/fas-rs"
       - name: Prepare artifacts
         run: |
-          mkdir -p output/artifact/release
-          unzip "output/fas-rs(release).zip" -d output/artifact/release
-      - name: Upload release version
+          mkdir -p "output/artifact/${{ matrix.profile }}"
+          unzip "output/fas-rs(${{ matrix.profile }}).zip" -d "output/artifact/${{ matrix.profile }}"
+      - name: Upload ${{ matrix.profile }} version
         uses: actions/upload-artifact@v4
         with:
-          name: fas-rs(release)
+          name: fas-rs(${{ matrix.profile }})
           compression-level: 9
-          path: output/artifact/release
-  
-  debug-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup ndk
-        run: |
-          ndk_url=$(wget -qO- https://github.com/android/ndk/releases/latest | grep -e 'https://dl.google.com/android/repository/android-ndk-.*-linux.zip' | sed -n 's/.*<a href="\([^"]*\)".*/\1/p')
-          wget -O ndk.zip $ndk_url -nv
-          mkdir ~/ndk_temp
-          unzip ndk.zip -d ~/ndk_temp 2>&1 > /dev/null
-          mv ~/ndk_temp/*/* ~/ndk_temp
-      - name: Setup rust toolchains
-        run: |
-          rustup default nightly
-          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
-          rustup component add rust-src
-          rustup update
-      - uses: Swatinem/rust-cache@v2
-      - name: Install cargo ndk
-        run: cargo install cargo-ndk
-      - name: Setup WebUI Deps
-        run: |
-          npm install next@latest react@latest react-dom@latest
-          cd webui
-          npm install
-      - name: Other deps
-        run: |
-          sudo apt update
-          sudo apt install gcc-multilib
-      - name: Build
-        run: |
-          export ANDROID_NDK_HOME=$(realpath ~/ndk_temp)
-          export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
-    
-          cargo xtask build -v
-      - name: Prepare artifacts
-        run: |
-          mkdir -p output/artifact/debug
-          unzip "output/fas-rs(debug).zip" -d output/artifact/debug
-      - name: Upload debug version
-        uses: actions/upload-artifact@v4
-        with:
-          name: fas-rs(debug)
-          compression-level: 9
-          path: output/artifact/debug
-  
+          if-no-files-found: error
+          path: output/artifact/${{ matrix.profile }}
+
   push_to_ci_group:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     name: Push to CI Group
+    env:
+      GROUP_DEBUG_ID: ${{ secrets.TELEGRAM_TO }}
+      BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
     needs:
-      - debug-build
-      - release-build
+      - build
     steps:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
@@ -136,6 +113,7 @@ jobs:
           cd "${{ github.workspace }}/artifacts/fas-rs(release)"
           zip -9 -rq "../fas-rs(release)" .
       - name: Post to Debug Group
+        if: env.BOT_TOKEN != '' && env.GROUP_DEBUG_ID != ''
         shell: bash
         env:
           GROUP_DEBUG_ID: ${{ secrets.TELEGRAM_TO }}

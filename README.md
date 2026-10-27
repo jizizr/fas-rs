@@ -149,6 +149,8 @@ core_temp_thresh = 95000
 
 ## **编译**
 
+完整依赖和固定版本安装步骤见[构建指南](docs/build.md)。额外需要 Node.js 22、pnpm 10.11.0 和预编译的 bpf-linker 0.12.0；请设置 NDK 对应的 `LIBCLANG_PATH`。
+
 ```bash
 # Ubuntu (NDK is required)
 apt install gcc-multilib git-lfs
